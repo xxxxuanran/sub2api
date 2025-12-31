@@ -144,35 +144,29 @@ func NewGatewayService(
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash
-// 注意：hash 中包含 model，确保不同模型的请求不会共享粘性会话
 func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 	if parsed == nil {
 		return ""
 	}
 
 	// 1. 最高优先级：从 metadata.user_id 提取 session_xxx
-	// 注意：即使是 session_xxx 也需要加入 model 区分
 	if parsed.MetadataUserID != "" {
 		if match := sessionIDRegex.FindStringSubmatch(parsed.MetadataUserID); len(match) > 1 {
-			sessionID := match[1]
-			if parsed.Model != "" {
-				return s.hashContent(sessionID + "|" + parsed.Model)
-			}
-			return sessionID
+			return match[1]
 		}
 	}
 
 	// 2. 提取带 cache_control: {type: "ephemeral"} 的内容
 	cacheableContent := s.extractCacheableContent(parsed)
 	if cacheableContent != "" {
-		return s.hashContentWithModel(cacheableContent, parsed.Model)
+		return s.hashContent(cacheableContent)
 	}
 
 	// 3. Fallback: 使用 system 内容
 	if parsed.System != nil {
 		systemText := s.extractTextFromSystem(parsed.System)
 		if systemText != "" {
-			return s.hashContentWithModel(systemText, parsed.Model)
+			return s.hashContent(systemText)
 		}
 	}
 
@@ -181,20 +175,12 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 		if firstMsg, ok := parsed.Messages[0].(map[string]any); ok {
 			msgText := s.extractTextFromContent(firstMsg["content"])
 			if msgText != "" {
-				return s.hashContentWithModel(msgText, parsed.Model)
+				return s.hashContent(msgText)
 			}
 		}
 	}
 
 	return ""
-}
-
-// hashContentWithModel 计算内容 hash，包含 model 以区分不同模型的请求
-func (s *GatewayService) hashContentWithModel(content, model string) string {
-	if model != "" {
-		return s.hashContent(content + "|" + model)
-	}
-	return s.hashContent(content)
 }
 
 func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
@@ -521,7 +507,14 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 // isModelSupportedByAccount 根据账户平台检查模型支持
 func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedModel string) bool {
 	if account.Platform == PlatformAntigravity {
-		// Antigravity 平台使用专门的模型支持检查
+		// Antigravity 平台：优先使用账户级 model_mapping（如果配置了）
+		// 这允许用户精确控制每个 Antigravity 账户支持哪些模型
+		mapping := account.GetModelMapping()
+		if len(mapping) > 0 {
+			_, exists := mapping[requestedModel]
+			return exists
+		}
+		// 没有配置 model_mapping，使用全局默认
 		return IsAntigravityModelSupported(requestedModel)
 	}
 	// 其他平台使用账户的模型支持检查

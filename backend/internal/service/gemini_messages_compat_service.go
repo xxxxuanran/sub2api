@@ -199,6 +199,13 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 // isModelSupportedByAccount 根据账户平台检查模型支持
 func (s *GeminiMessagesCompatService) isModelSupportedByAccount(account *Account, requestedModel string) bool {
 	if account.Platform == PlatformAntigravity {
+		// Antigravity 平台：优先使用账户级 model_mapping（如果配置了）
+		mapping := account.GetModelMapping()
+		if len(mapping) > 0 {
+			_, exists := mapping[requestedModel]
+			return exists
+		}
+		// 没有配置 model_mapping，使用全局默认
 		return IsAntigravityModelSupported(requestedModel)
 	}
 	return account.IsModelSupported(requestedModel)
