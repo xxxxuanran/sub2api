@@ -144,29 +144,35 @@ func NewGatewayService(
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash
+// 注意：hash 中包含 model，确保不同模型的请求不会共享粘性会话
 func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 	if parsed == nil {
 		return ""
 	}
 
 	// 1. 最高优先级：从 metadata.user_id 提取 session_xxx
+	// 注意：即使是 session_xxx 也需要加入 model 区分
 	if parsed.MetadataUserID != "" {
 		if match := sessionIDRegex.FindStringSubmatch(parsed.MetadataUserID); len(match) > 1 {
-			return match[1]
+			sessionID := match[1]
+			if parsed.Model != "" {
+				return s.hashContent(sessionID + "|" + parsed.Model)
+			}
+			return sessionID
 		}
 	}
 
 	// 2. 提取带 cache_control: {type: "ephemeral"} 的内容
 	cacheableContent := s.extractCacheableContent(parsed)
 	if cacheableContent != "" {
-		return s.hashContent(cacheableContent)
+		return s.hashContentWithModel(cacheableContent, parsed.Model)
 	}
 
 	// 3. Fallback: 使用 system 内容
 	if parsed.System != nil {
 		systemText := s.extractTextFromSystem(parsed.System)
 		if systemText != "" {
-			return s.hashContent(systemText)
+			return s.hashContentWithModel(systemText, parsed.Model)
 		}
 	}
 
@@ -175,12 +181,20 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 		if firstMsg, ok := parsed.Messages[0].(map[string]any); ok {
 			msgText := s.extractTextFromContent(firstMsg["content"])
 			if msgText != "" {
-				return s.hashContent(msgText)
+				return s.hashContentWithModel(msgText, parsed.Model)
 			}
 		}
 	}
 
 	return ""
+}
+
+// hashContentWithModel 计算内容 hash，包含 model 以区分不同模型的请求
+func (s *GatewayService) hashContentWithModel(content, model string) string {
+	if model != "" {
+		return s.hashContent(content + "|" + model)
+	}
+	return s.hashContent(content)
 }
 
 func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {

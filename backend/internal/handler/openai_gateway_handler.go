@@ -136,7 +136,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// Generate session hash (from header for OpenAI)
-	sessionHash := h.gatewayService.GenerateSessionHash(c)
+	sessionHash := h.gatewayService.GenerateSessionHash(c, reqModel)
 
 	const maxAccountSwitches = 3
 	switchCount := 0

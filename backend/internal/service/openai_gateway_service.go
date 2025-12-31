@@ -117,12 +117,18 @@ func NewOpenAIGatewayService(
 }
 
 // GenerateSessionHash generates session hash from header (OpenAI uses session_id header)
-func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context) string {
+// model 参数用于区分不同模型的请求，避免跨模型共享粘性会话
+func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, model string) string {
 	sessionID := c.GetHeader("session_id")
 	if sessionID == "" {
 		return ""
 	}
-	hash := sha256.Sum256([]byte(sessionID))
+	// 将 model 加入 hash，确保不同模型不共享粘性会话
+	content := sessionID
+	if model != "" {
+		content = sessionID + "|" + model
+	}
+	hash := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(hash[:])
 }
 
